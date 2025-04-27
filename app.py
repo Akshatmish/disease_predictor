@@ -6,7 +6,6 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 import sqlite3
 from datetime import datetime, timedelta
-import os
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 
@@ -222,79 +221,9 @@ def train_models():
     global models, scalers
     print("Starting model training...")
     
-    # Attempt to train Kidney model with real data
-    try:
-        if not os.path.exists('kidney_disease.csv'):
-            print("kidney_disease.csv not found. Generating synthetic data for Kidney...")
-            raise FileNotFoundError("kidney_disease.csv not found")
-        
-        df_kidney = pd.read_csv('kidney_disease.csv')
-        required_columns = ['age', 'creatinine', 'urea', 'sodium', 'potassium', 'classification']
-        missing_cols = [col for col in required_columns if col not in df_kidney.columns]
-        if missing_cols:
-            raise ValueError(f"Missing columns in kidney_disease.csv: {missing_cols}")
-        
-        df_kidney = df_kidney.dropna(subset=required_columns)
-        df_kidney['classification'] = df_kidney['classification'].map({'ckd': 1, 'notckd': 0})
-        df_kidney = df_kidney.dropna(subset=['classification'])
-        
-        if df_kidney.empty:
-            raise ValueError("Kidney dataset is empty after preprocessing")
-        
-        X_kidney = df_kidney[['age', 'creatinine', 'urea', 'sodium', 'potassium']]
-        y_kidney = df_kidney['classification']
-        
-        X_train, X_test, y_train, y_test = train_test_split(X_kidney, y_kidney, test_size=0.3, random_state=42)
-        scaler_kidney = StandardScaler()
-        X_train_scaled = scaler_kidney.fit_transform(X_train)
-        
-        model_kidney = LogisticRegression(max_iter=1000)
-        model_kidney.fit(X_train_scaled, y_train)
-        
-        models['Kidney'] = model_kidney
-        scalers['Kidney'] = scaler_kidney
-        print("Kidney model and scaler trained successfully with real data")
-    
-    except Exception as e:
-        print(f"Error loading/training kidney dataset: {e}. Falling back to synthetic data for Kidney.")
-        # Fallback to synthetic data for Kidney
-        try:
-            n_samples = 1000
-            data = {}
-            ranges = disease_features['Kidney']['ranges']
-            for feature in disease_features['Kidney']['features']:
-                min_val, max_val = ranges[feature]
-                if feature == 'age':
-                    data[feature] = np.random.randint(min_val, max_val + 1, n_samples)
-                else:
-                    data[feature] = np.random.uniform(min_val, max_val, n_samples)
-            
-            data['target'] = np.where((data['creatinine'] > 1.5) & (data['urea'] > 50), 1, 0)
-            
-            df_kidney = pd.DataFrame(data)
-            df_kidney['target'] = df_kidney['target'].astype(int)
-            
-            X_kidney = df_kidney.drop('target', axis=1)
-            y_kidney = df_kidney['target']
-            
-            X_train, X_test, y_train, y_test = train_test_split(X_kidney, y_kidney, test_size=0.3, random_state=42)
-            scaler_kidney = StandardScaler()
-            X_train_scaled = scaler_kidney.fit_transform(X_train)
-            
-            model_kidney = LogisticRegression(max_iter=1000)
-            model_kidney.fit(X_train_scaled, y_train)
-            
-            models['Kidney'] = model_kidney
-            scalers['Kidney'] = scaler_kidney
-            print("Kidney model and scaler trained successfully with synthetic data")
-        except Exception as e:
-            print(f"Failed to train Kidney model with synthetic data: {e}")
-
-    # Train models for other diseases with synthetic data
+    # Train models for all diseases with synthetic data
     np.random.seed(42)
     for disease in disease_features.keys():
-        if disease == 'Kidney':
-            continue
         try:
             n_samples = 1000
             data = {}
@@ -308,6 +237,8 @@ def train_models():
             
             if disease == 'Heart':
                 data['target'] = np.where((data['cholesterol'] > 200) & (data['blood_pressure'] > 140), 1, 0)
+            elif disease == 'Kidney':
+                data['target'] = np.where((data['creatinine'] > 1.5) & (data['urea'] > 50), 1, 0)
             elif disease == 'Liver':
                 data['target'] = np.where((data['bilirubin'] > 1.2) & (data['alt'] > 40), 1, 0)
             elif disease == 'Diabetes':
@@ -344,7 +275,11 @@ def train_models():
 @app.route('/', methods=['GET', 'POST'])
 def index():
     db = get_db()
-    reviews = get_reviews(db)
+    try:
+        reviews = get_reviews(db)
+    except Exception as e:
+        print(f"Error fetching reviews: {e}")
+        reviews = []
     if request.method == 'POST':
         disease = request.form.get('disease')
         if disease in disease_features:
