@@ -368,7 +368,7 @@ def predict():
 @app.route('/submit_review', methods=['POST'])
 def submit_review():
     db = get_db()
-    try:
+    try: 
         name = request.form.get('name', 'Anonymous')
         rating = int(request.form.get('rating', 5))
         comment = request.form.get('comment', '')
